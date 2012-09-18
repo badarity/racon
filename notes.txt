@@ -1,0 +1,19 @@
+/games -
+ GET: room list
+ PUT: add new room (returns room id)
+/reg
+ GET: get new user id
+/games/ID
+ GET: get game state with 'user' specified also returns 
+      state for player 0, which can be dead or {x,y}
+ PUT: user=USER_ID send user control
+
+Every room is a separate process
+with two states - master and slave,
+hence one node can ran both types of rooms.
+
+Mapping room_id -> {primary, slave} is
+stored in mnesia, client starts
+primary room which then starts slave room
+and returns both pids which are stored
+in 
