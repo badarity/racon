@@ -41,9 +41,9 @@ upgrade() ->
 %% @spec init([]) -> SupervisorTree
 %% @doc supervisor callback.
 init([]) ->
-    Web = web_specs(racon_web, 8080),
+    Web = web_specs(racon_web, 8081),
     Client = client_specs(),
-    Processes = [Web, Client],
+    Processes = [Client, Web],
     Strategy = {one_for_all, 10, 10},
     {ok,
      {Strategy, lists:flatten(Processes)}}.
@@ -51,7 +51,7 @@ init([]) ->
 web_specs(Mod, Port) ->
     WebConfig = [{ip, {0,0,0,0}},
                  {port, Port},
-                 {docroot, racon_deps:local_path(["priv", "www"])}],
+                 {docroot, "priv/www"}],
     {Mod,
      {Mod, start, [WebConfig]},
      permanent, 5000, worker, dynamic}.

@@ -21,6 +21,8 @@ ensure_started(App) ->
 start() ->
     racon_deps:ensure(),
     ensure_started(crypto),
+    application:start(mnesia),
+    application:start(ranch),
     application:start(racon).
 
 
