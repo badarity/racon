@@ -47,8 +47,8 @@ dispatch_request(Req) ->
             racon_cli:get_gamelist(Req);
         { "/games", 'PUT' } ->
             racon_cli:create_game(Req);
-        { "/reg", 'GET' } ->
-            racon_cli:register_user(Req);
+        { "/reg/" ++ GID, 'GET' } ->
+            racon_cli:register_user(GID, Req);
         { "/games/" ++ GID, 'GET' } ->
             get_gamestate(GID, Req);
         { "/games/" ++ GID, 'PUT' } ->
