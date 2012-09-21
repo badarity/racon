@@ -31,7 +31,8 @@ websocket_terminate(_Reason, _Req, _S) ->
 
 connect_games(Gid) ->
     {Master, Slave} = racon_cli:gamepids(Gid),
-    lists:foreach(fun erlang:monitor/1, [Master, Slave]),
+    lists:foreach(fun(Node) -> erlang:monitor(process, Node) end,
+                  [Master, Slave]),
     #state{master = Master, slave = Slave, game = Master}.
 
 report_gamestate(Gid, Uid, Req, #state{game = Pid} = State) ->
