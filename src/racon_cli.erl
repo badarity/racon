@@ -88,9 +88,10 @@ try_start_master_game(Master, GID, Slave) ->
             {error, Reason}
     end.
 
-pick_game_nodes([ Master | Others ]) ->
-    [ Slave | Tail ] = Others ++ [Master],
-    {Master, Slave, Tail ++ [Slave] }.
+pick_game_nodes([ Master ] = Nodes) ->
+    {Master, undefined, Nodes };
+pick_game_nodes([ Master, Slave | Tail]) ->
+    {Master, Slave, Tail ++ [ Slave, Master ]}.
 
 game_pid(GID, #state{games = Games}) ->
     {Pid, GID, _Type} = lists:keyfind(GID, 2, Games),
