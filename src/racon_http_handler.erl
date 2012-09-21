@@ -1,11 +1,14 @@
 -module(racon_http_handler).
 
--behaviour(cowboy_http_handler).
+%%-behaviour(cowboy_http_handler).
 
--export([init/3, terminate/2]).
+-export([init/3, handle/2, terminate/2]).
 
-init({tcp, http}, Req, [Path]) ->
-    {shutdown, dispatch_req(Path, Req), undefined}.
+init({tcp, http}, Req, [Operation]) ->
+    {ok, Req, Operation}.
+
+handle(Req, Operation) ->
+    {ok, dispatch_req(Operation, Req), Operation}.
 
 terminate(_Req, _State) ->
 	ok.
@@ -14,11 +17,11 @@ terminate(_Req, _State) ->
 
 dispatch_req(newgame, Req) ->
     reply(racon_cli:create_game(), Req);
-dispatch_req(game, Req) ->
+dispatch_req(gamelist, Req) ->
     reply(racon_cli:get_gamelist(), Req).
 
 reply(Value, Req) ->
-    {ok, Req2} = http_reply(Value, Req),
+    {ok, Req2} = http_reply({ok, Value}, Req),
     Req2.
 
 
@@ -37,7 +40,7 @@ http_error_reply(Reason, HttpReq) ->
 %% JSON related
 
 json_encode(Data) ->
-    list_to_binary(mochijson2:encode(term_to_mochijson(Data))).
+    mochijson2:encode(term_to_mochijson(Data)).
 
 term_to_mochijson({Key, Value}) ->
     {struct, [ {Key, term_to_mochijson(Value)} ]};

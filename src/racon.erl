@@ -23,6 +23,7 @@ start() ->
     ensure_started(crypto),
     application:start(mnesia),
     application:start(ranch),
+    application:start(cowboy),
     application:start(racon).
 
 

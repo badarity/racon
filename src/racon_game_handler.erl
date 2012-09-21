@@ -13,8 +13,7 @@ websocket_init(_TransportName, Req, _Opts) ->
     Gid = cowboy_req:binding(gid, Req),
     Uid = cowboy_req:qs_val(<<"uid">>, Req),
     State = connect_games(Gid),
-    report_gamestate(Gid, Uid, Req, State),
-    {ok, Req, State}.
+    {ok, Req, report_gamestate(Gid, Uid, Req, State)}.
 
 websocket_handle({text, Msg}, Req, #state{game = Pid} = State) ->
     make_move(Msg, Pid),
@@ -36,7 +35,8 @@ connect_games(Gid) ->
     #state{master = Master, slave = Slave, game = Master}.
 
 report_gamestate(Gid, Uid, Req, #state{game = Pid} = State) ->
-    Gamestate = racon_game:gamestate(Pid, Uid). %% it will send back async response
+    {NewUid, Gamestate} = racon_game:gamestate(Pid, Uid),%% it will send back async response
+    State#state{uid = NewUid}.
 
 make_move(Direction, GamePid) ->
     racon_game:move(GamePid, direction(Direction)).
