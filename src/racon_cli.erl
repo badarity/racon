@@ -33,7 +33,7 @@ start_slave_game(SlaveNode, GID, MasterPid) ->
 
 gamepids(Gid) ->
     %% is it dirty?
-    #game_nodes{master = Master, slave = Slave} = get_game(Gid),
+    #game_nodes{master = Master, slave = Slave} = mt_get_game(Gid), %% FIXME
     {Res, _Bad} = gen_server:multi_call([Master, Slave], ?MODULE, {gamepid, Gid}),
     Result = fun(Node) -> proplists:get_value(Node, Res) end,
     {Result(Master), Result(Slave)}.
@@ -45,7 +45,6 @@ prepare_mnesia() ->
                                                       {attributes, Fields}]).
 
 init(_Args) ->
-    prepare_mnesia(),
     fail_node_games(node()),
     greet_nodes(),
     process_flag(trap_exit, true),
@@ -53,7 +52,7 @@ init(_Args) ->
     {ok, #state{}}.
 
 handle_call(get_gamelist, _From, State) ->
-    {reply, mnesia:dirty_all_keys(?GAMES_TABLE), State};
+    {reply, ok_reply(mnesia:dirty_all_keys(?GAMES_TABLE)), State};
 
 handle_call(create_game, From, State) ->
     {Reply, NewState} = create_new_game(State),
@@ -85,16 +84,23 @@ greet_nodes() ->
 create_new_game(#state{nodes = Nodes} = State) ->
     {Master, Slave, NewNodes} = pick_game_nodes(Nodes),
     GID = store_game(Master, Slave),
-    try_start_master_game(Master, GID, Slave, State#state{ nodes = NewNodes }).
+    {Status, NewState} = 
+	try_start_master_game(Master, GID, Slave, State#state{ nodes = NewNodes }),
+    {{Status, GID}, NewState}.
 
 try_start_master_game(Master, GID, Slave, State) ->
     try start_master_game_somewhere(Master, GID, Slave, State) of
-        Pid -> {ok, Pid}
+        NewState -> {ok, NewState}
     catch
         _Error:Reason ->
             remove_game(GID),
-            {error, Reason}
+            {error, State, Reason}
     end.
+
+%% http client interaction
+
+ok_reply(Reply) ->
+    {ok, Reply}.
 
 %% possibly rewrite
 start_master_game_somewhere(Master, GID, Slave, State) when Master == node() ->
@@ -105,7 +111,7 @@ start_master_game_somewhere(Master, GID, Slave, State) ->
     
 start_master_game_process(GID, SlaveNode, State) ->
     Pid = racon_game:start_link({master, SlaveNode, GID}),
-    { Pid, add_game(GID, Pid, master, State) }.
+    add_game(GID, Pid, master, State).
 
 
 pick_game_nodes([ Master ] = Nodes) ->
@@ -126,6 +132,10 @@ del_game(Pid, #state{games = Games} = State) ->
     State#state{games = NewGames}.
 
 %% DB functions
+
+mt_get_game(Gid) ->
+    {atomic, Result} = mnesia:transaction(fun get_game/1, [Gid]),
+    Result.
 
 fail_node_games(Node) ->
     {atomic, _Res1} = mnesia:transaction(fun fail_games_as_master/1, [Node]),
@@ -155,7 +165,8 @@ fail_game(GID, Type) ->
     mnesia:transaction(Failer).
 
 get_game(Gid) ->
-    mnesia:read(?GAMES_TABLE, Gid).
+    [ Game | _ ] = mnesia:read(?GAMES_TABLE, Gid),
+    Game.
 
 fail_node(#game_nodes{gid = Gid, slave = undefined}, master) ->
     remove_game(Gid);

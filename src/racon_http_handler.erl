@@ -21,7 +21,7 @@ dispatch_req(gamelist, Req) ->
     reply(racon_cli:get_gamelist(), Req).
 
 reply(Value, Req) ->
-    {ok, Req2} = http_reply({ok, Value}, Req),
+    {ok, Req2} = http_reply(Value, Req),
     Req2.
 
 

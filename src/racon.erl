@@ -21,7 +21,7 @@ ensure_started(App) ->
 start() ->
     racon_deps:ensure(),
     ensure_started(crypto),
-    application:start(mnesia),
+    racon_cli:prepare_mnesia(), %% FIXME
     application:start(ranch),
     application:start(cowboy),
     application:start(racon).
