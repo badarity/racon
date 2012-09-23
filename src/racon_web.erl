@@ -10,17 +10,21 @@
 start(Options) ->
     DocRoot = proplists:get_value(docroot, Options),
     Port = proplists:get_value(port, Options),
-	Dispatch = [
-		{'_', [
-               {[<<"game">>, gid], racon_websocket_handler, []},
-               {[<<"game">>], racon_http_handler, [gamelist]},
-               {[<<"newgame">>], racon_http_handler, [newgame]},
-               {['...'], cowboy_static, [{directory, DocRoot}]}
-		]}
+    Mimetypes = [{<<".html">>, [<<"text/html">>]}],
+    Dispatch =
+	[
+	 {'_', [
+		{[<<"game">>, gid], racon_websocket_handler, []},
+		{[<<"game">>], racon_http_handler, [gamelist]},
+		{[<<"newgame">>], racon_http_handler, [newgame]},
+		{['...'], cowboy_static, [{directory, DocRoot},
+					  {file, <<"index.html">>},
+					   {mimetypes, Mimetypes}]}
+	       ]}
 	],
-	{ok, _} = cowboy:start_http(?MODULE, 100, [{port, Port}], [
-		{dispatch, Dispatch}
-	]).
+    {ok, _} = cowboy:start_http(?MODULE, 100, [{port, Port}], [
+							       {dispatch, Dispatch}
+							      ]).
 
 
 stop() ->
