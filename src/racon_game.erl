@@ -101,14 +101,17 @@ handle_gamestate(Uid, Client, State) ->
     notify_clients(NewState),
     {noreply, NewState}.
 
-handle_move(Uid, Direction, {Client, _Ref}, State) ->
-    NewState = move_player(Uid, Direction, State),
-    notify_clients(NewState),
-    {reply, empty, add_client(Uid, Client, NewState)}.
+handle_move(_Uid, Direction, {Client, _Ref}, State) ->
+    MovedState = move_player(client_uid(Client, State), Direction, State),
+    notify_clients(MovedState),
+    {reply, empty, MovedState}.
 
 move_player(Uid, Direction, #state{positions = Pos} = State) ->
     PlayerPos = proplists:get_value(Uid, Pos),
     change_pos(Uid, PlayerPos, Direction, State).
+
+client_uid(Client, #state{users = Users}) ->
+    proplists:get_value(Client, Users).
 
 change_pos(_Uid, undefined, _Direction, State) ->
     State;
@@ -123,7 +126,7 @@ change_pos(_Uid, {X, _Y}, right, #state{field_size = {X, _H}} = State) ->
 change_pos(Uid, Coords, Direction, #state{positions = Pos} = State) ->
     NewCoords = step(Coords, Direction),
     CleanedPos = lists:keydelete(NewCoords, 2, Pos),
-    State#state{positions = [ proplists:append_values(Uid, NewCoords) | 
+    State#state{positions = [ {Uid, NewCoords} | 
                               proplists:delete(Uid, CleanedPos) ]}.
 
 step({X, Y}, up) ->
@@ -141,15 +144,8 @@ handle_down(Pid, #state{master_pid = Pid} = State) ->
 handle_down(Pid, #state{slave_pid = Pid} = State) ->
     State#state{slave_pid = undefined}.
 
-compose_gamestate(undefined, #state{field_size = Size,
-                                         positions = Pos} = State) ->
-    {Uid, NewState} = gen_uid(State),
-    NewPos = place_new_player(Uid, Size, Pos),
-    { add_property({"uid", Uid}, compose_field(Size, Uid, NewPos)),
-      NewState#state{positions = NewPos} };
-
-compose_gamestate(Uid, #state{field_size = Size, positions = Pos} = State) ->
-    { compose_field(Size, Uid, Pos), State }.
+compose_gamestate(Uid, #state{field_size = Size, positions = Pos}) ->
+    add_property({"uid", Uid}, compose_field(Size, Uid, Pos)).
 
 compose_field({H, W}, Uid, Pos) ->
     {object, [ { "field", 
@@ -159,7 +155,9 @@ compose_field({H, W}, Uid, Pos) ->
 compose_positions(CurrentUid, Positions) ->
     Folder =
         fun({Uid, Position}, {PlayerId, Mapped}) when CurrentUid == Uid ->
-                {PlayerId, compose_position(PlayerId, Position, Mapped)};
+%						io:format("~p~n", [Uid]),
+
+                {PlayerId, compose_position(0, Position, Mapped)};
             ({_Uid, Position}, {PlayerId, Mapped}) ->
                 {PlayerId + 1, compose_position(PlayerId, Position, Mapped)}
         end,
@@ -192,16 +190,20 @@ pick_free_position({H, W}, Occupied) ->
         [ Affordable | _T ] -> Affordable
     end.              
 
-add_client(Uid, Client, #state{users = Users} = State) ->
-    State#state{users = lists:keystore(Client, 1, Users, {Client, Uid})}.
+add_client(undefined, Client, State) ->
+    #state{field_size = Size, positions = Pos} = State,
+    {Uid, NewState} = gen_uid(State),
+    NewPos = place_new_player(Uid, Size, Pos),
+    add_user(Client, Uid, NewState#state{positions = NewPos});
+    
+add_client(Uid, Client, State) ->
+    add_user(Client, Uid, State).
+
+add_user(Pid, Uid, #state{users = Users} = State) ->
+    State#state{users = lists:keystore(Pid, 1, Users, {Pid, Uid})}.
 
 notify_clients(#state{users = Users} = State) ->
-    lists:foldl(fun notifier/2, State, Users).
-
-notifier({Pid, Uid}, CurrentState) ->
-    {NextGamestate, NextState} = compose_gamestate(Uid, CurrentState),
-    Pid ! {gamestate, NextGamestate},
-    NextState.
+    [Pid ! {gamestate, compose_gamestate(Uid, State)} || {Pid, Uid} <- Users].
 
 gen_uid(#state{nonce = Nonce} = State) ->
     NewNonce = Nonce + 1,

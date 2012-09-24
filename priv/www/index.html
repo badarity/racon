@@ -1,34 +1,37 @@
 <!DOCTYPE HTML>
 
 <html>
-  <body>
-    <h1>Greetings!</h1>
+  <head>
     <script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.js"></script>
     <script>
-      $(function() {
-      var ws = new WebSocket('ws://localhost:8081/game/2');
-
-      ws.onopen = function() {
-
-      $('div.frontend').append($('<div/>').html(getTime() + ': connection opened'));
-
+      play = function(gid) {
+        var ws = new WebSocket("ws://"+location.host+"/game/" + gid);
+        ws.onmessage = function(event) {
+          var gamestate = $.parseJSON(event.data);
+          $('div.uid').replaceWith(gamestate.uid);
+          for (var i in gamestate.players) {
+            var pos = gamestate.players[i];
+            if (0 == pos.id) {
+              $('div.pos').html("(" + pos.pos.x + "," + pos.pos.y + ")");
+            }
+          }
+          ws.send("right");
+        }
       };
-      ws.onmessage = function(event) {
-      $('div.frontend').append($('<div/>').html(getTime() + ': message received: ' + event.data));
-
-      }
-      ws.onclose = function() {
-
-      $('div.frontend').append($('<div/>').html(getTime() + ': connection closed'));
-
-      };
-
-      function getTime() {
-
-      return new Date().toTimeString().slice(0,8);
-
-      }
-      });
+      $.get("game", function(data) {
+        if (0 == data.games.length) {
+          $.get("newgame", function(data) {
+            play(data.gid);
+          }, "json");
+        } else {
+          play(data.games[0]);
+        }
+      }, "json");
     </script>
+  </head>
+  <body>
+    <h1>Greetings!</h1>
+    <div class="uid"></div>
+    <div class="pos"></div>
   </body>
 </html>

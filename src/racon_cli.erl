@@ -52,7 +52,7 @@ init(_Args) ->
     {ok, #state{}}.
 
 handle_call(get_gamelist, _From, State) ->
-    {reply, ok_reply(mnesia:dirty_all_keys(?GAMES_TABLE)), State};
+    {reply, ok_reply({ "games", mnesia:dirty_all_keys(?GAMES_TABLE) }), State};
 
 handle_call(create_game, _From, State) ->
     {Reply, NewState} = create_new_game(State),
@@ -86,7 +86,7 @@ create_new_game(#state{nodes = Nodes} = State) ->
     GID = store_game(Master, Slave),
     {Status, NewState} = 
 	try_start_master_game(Master, GID, Slave, State#state{ nodes = NewNodes }),
-    {{Status, GID}, NewState}.
+    {{Status, { "gid", GID } }, NewState}.
 
 try_start_master_game(Master, GID, Slave, State) ->
     try start_master_game_somewhere(Master, GID, Slave, State) of

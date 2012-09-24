@@ -16,11 +16,12 @@ websocket_init(_TransportName, Req, _Opts) ->
     report_gamestate(Uid, State),
     {ok, Req3, State}.
 
-websocket_handle({text, Msg}, Req, #state{game = Pid} = State) ->
-    make_move(Msg, Pid),
+websocket_handle({text, Msg}, Req, #state{game = Pid, uid = Uid} = State) ->
+    make_move(Msg, Pid, Uid),
     {ok, Req, State}.
 
 websocket_info({gamestate, Gamestate}, Req, State) ->
+%    io:format("~p~n", [Gamestate]),
     {reply, {text, json_encode(Gamestate)}, Req, State};
 
 websocket_info({'DOWN', _Ref, _Type, Pid, _Info}, Req, State) ->
@@ -51,8 +52,8 @@ connect_games(Gid) ->
 report_gamestate(Uid, #state{game = Pid}) ->
     racon_game:gamestate(Pid, Uid).%% it will send back async response
 
-make_move(Direction, GamePid) ->
-    racon_game:move(GamePid, direction(Direction)).
+make_move(Direction, GamePid, Uid) ->
+    racon_game:move(GamePid, Uid, direction(Direction)).
 
 direction(<<"up">>) -> up;
 direction(<<"down">>) -> down;
