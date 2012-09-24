@@ -48,7 +48,7 @@ connect_games(Gid) ->
                   [Master, Slave]),
     #state{master = Master, slave = Slave, game = Master}.
 
-report_gamestate(Uid, #state{game = Pid} = State) ->
+report_gamestate(Uid, #state{game = Pid}) ->
     racon_game:gamestate(Pid, Uid).%% it will send back async response
 
 make_move(Direction, GamePid) ->
@@ -59,6 +59,9 @@ direction(<<"down">>) -> down;
 direction(<<"left">>) -> left;
 direction(<<"right">>) -> right.
 
+%% erlang:monitor, why???
+say_bye({undefined, _Node}, Req, State) ->
+    {ok, Req, State};
 say_bye(Pid, Req, #state{master = Pid, slave = undefined} = State) ->
     no_nodes(Req, State);
 say_bye(Pid, Req, #state{slave = Pid, game = Pid} = State) ->

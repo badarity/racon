@@ -141,25 +141,26 @@ handle_down(Pid, #state{slave_pid = Pid} = State) ->
 
 compose_gamestate(undefined, #state{field_size = {H, W},
                                          positions = Pos} = State) ->
-    Uid = gen_uid(State),
+    {Uid, NewState} = gen_uid(State),
     NewPos = place_new_player(Uid, Pos),
-    [ { "uid", Uid} | compose_field({H, W}, undefined, NewPos) ];
+    { [ { "uid", Uid} | compose_field({H, W}, Uid, NewPos) ], NewState };
 
-compose_gamestate(Uid, #state{field_size = {H, W}, positions = Pos}) ->
-    compose_field({H, W}, Uid, Pos).
+compose_gamestate(Uid, #state{field_size = {H, W}, positions = Pos} = State) ->
+    {compose_field({H, W}, Uid, Pos), State}.
 
 compose_field({H, W}, Uid, Pos) ->
     [ { "field", [ { "height", H }, { "width", W } ] },
       { "players", compose_positions(Uid, Pos) } ].
 
-compose_positions(CurrentPlayer, Positions) ->
+compose_positions(CurrentUid, Positions) ->
     Folder =
-        fun([Uid, Position], {PlayerId, Mapped}) when CurrentPlayer == Uid ->
+        fun({Uid, Position}, {PlayerId, Mapped}) when CurrentUid == Uid ->
                 {PlayerId, [ {0, Position} | Mapped ]};
-           ([_Uid, Position], {PlayerId, Mapped}) ->
-                {PlayerId + 1, [{PlayerId, Position} | Mapped]}
+            ({_Uid, Position}, {PlayerId, Mapped}) ->
+                {PlayerId+1, [ {PlayerId, Position} | Mapped ]}
         end,
-    lists:foldl(Folder, 1, Positions).
+    {_LastId, MappedPositions} = lists:foldl(Folder, {1, []}, Positions),
+    MappedPositions.
 
 place_new_player(Uid, Pos) ->
     [{Uid, {1,1}} | Pos]. %% FIXME
@@ -168,7 +169,13 @@ add_client(Uid, Client, #state{users = Users} = State) ->
     State#state{users = lists:keystore(Client, 1, Users, {Client, Uid})}.
 
 notify_clients(#state{users = Users} = State) ->
-    [ Pid ! {gamestate, compose_gamestate(Uid, State)} || {Pid, Uid} <- Users].
+    {_LastGamestate, LatestState} = lists:foldl(fun notifier/2, State, Users),
+    LatestState.
+
+notifier({Pid, Uid}, CurrentState) ->
+    {NextGamestate, NextState} = compose_gamestate(Uid, CurrentState),
+    Pid ! {gamestate, NextGamestate},
+    NextState.
 
 gen_uid(#state{nonce = Nonce} = State) ->
     NewNonce = Nonce + 1,
