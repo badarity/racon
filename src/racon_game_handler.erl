@@ -35,12 +35,12 @@ get_gid(Req) ->
 
 get_uid(Req) ->
     { Uid, Req2 } = cowboy_req:qs_val(<<"uid">>, Req),
-    { maybe_list(Uid), Req2 }.
+    { maybe_uid(Uid), Req2 }.
 
-maybe_list(undefined) ->
+maybe_uid(undefined) ->
     undefined;
-maybe_list(Binary) ->
-    binary_to_list(Binary).
+maybe_uid(Binary) ->
+    racon_game:uid_decode(Binary).
 
 connect_games(Gid) ->
     {Master, Slave} = racon_cli:gamepids(Gid),
@@ -74,14 +74,13 @@ say_bye(Pid, Req, #state{slave = Pid} = State) ->
 no_nodes(Req, State) ->
     {shutdown, Req, State#state{game = undefined}}.
 
-
 %% Json
 
 json_encode(Data) ->
     list_to_binary(mochijson2:encode(term_to_mochijson(Data))).
 
-term_to_mochijson({Key, Value}) ->
-    {struct, [ {Key, term_to_mochijson(Value)} ]};
+term_to_mochijson({object, Properties}) ->
+    {struct, [ {Key, term_to_mochijson(Value)} || {Key, Value} <- Properties]};
 term_to_mochijson(ValueList) when is_list(ValueList) ->
     lists:map(fun term_to_mochijson/1, ValueList);
 term_to_mochijson(Value) ->

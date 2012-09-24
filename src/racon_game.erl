@@ -4,6 +4,8 @@
 
 -export([start_link/1, gamestate/2, move/3]).
 -export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
+-export([uid_encode/1, uid_decode/1]).
+-export([uid_coding_test/0]).
 
 -define(NONCE_SIZE, 16).
 
@@ -139,38 +141,62 @@ handle_down(Pid, #state{master_pid = Pid} = State) ->
 handle_down(Pid, #state{slave_pid = Pid} = State) ->
     State#state{slave_pid = undefined}.
 
-compose_gamestate(undefined, #state{field_size = {H, W},
+compose_gamestate(undefined, #state{field_size = Size,
                                          positions = Pos} = State) ->
     {Uid, NewState} = gen_uid(State),
-    NewPos = place_new_player(Uid, Pos),
-    { [ { "uid", Uid} | compose_field({H, W}, Uid, NewPos) ], NewState };
+    NewPos = place_new_player(Uid, Size, Pos),
+    { add_property({"uid", Uid}, compose_field(Size, Uid, NewPos)),
+      NewState#state{positions = NewPos} };
 
-compose_gamestate(Uid, #state{field_size = {H, W}, positions = Pos} = State) ->
-    {compose_field({H, W}, Uid, Pos), State}.
+compose_gamestate(Uid, #state{field_size = Size, positions = Pos} = State) ->
+    { compose_field(Size, Uid, Pos), State }.
 
 compose_field({H, W}, Uid, Pos) ->
-    [ { "field", [ { "height", H }, { "width", W } ] },
-      { "players", compose_positions(Uid, Pos) } ].
+    {object, [ { "field", 
+                 {object, [ { "height", H }, { "width", W } ] } },
+               { "players", compose_positions(Uid, Pos) } ]}.
 
 compose_positions(CurrentUid, Positions) ->
     Folder =
         fun({Uid, Position}, {PlayerId, Mapped}) when CurrentUid == Uid ->
-                {PlayerId, [ {0, Position} | Mapped ]};
+                {PlayerId, compose_position(PlayerId, Position, Mapped)};
             ({_Uid, Position}, {PlayerId, Mapped}) ->
-                {PlayerId+1, [ {PlayerId, Position} | Mapped ]}
+                {PlayerId + 1, compose_position(PlayerId, Position, Mapped)}
         end,
     {_LastId, MappedPositions} = lists:foldl(Folder, {1, []}, Positions),
     MappedPositions.
 
-place_new_player(Uid, Pos) ->
-    [{Uid, {1,1}} | Pos]. %% FIXME
+compose_position(PlayerId, {X, Y}, Composed) ->
+    [ {object, [ {"id", PlayerId},
+                 {"pos", {object, [{"x", X}, {"y", Y}] } } ] }
+      | Composed ].
+
+add_property(Property, {object, Props}) ->
+    {object, [Property | Props]}.
+
+place_new_player(Uid, Size, Pos) ->
+    place_player(Uid, pick_free_position(Size, Pos), Pos).
+
+place_player(_Uid, undefined, Occupied) ->
+    Occupied;
+
+place_player(Uid, Position, Occupied) ->
+    [ {Uid, Position} | Occupied ].
+
+pick_free_position({H, W}, Occupied) ->
+    Seq = fun lists:seq/2,
+    {_, Free} = lists:splitwith(fun(Pos) -> lists:keymember(Pos, 2, Occupied) end,
+                                [{X, Y} || X <- Seq(1, H), Y <- Seq(1, W)]),
+    case Free of
+        [] -> undefined;
+        [ Affordable | _T ] -> Affordable
+    end.              
 
 add_client(Uid, Client, #state{users = Users} = State) ->
     State#state{users = lists:keystore(Client, 1, Users, {Client, Uid})}.
 
 notify_clients(#state{users = Users} = State) ->
-    {_LastGamestate, LatestState} = lists:foldl(fun notifier/2, State, Users),
-    LatestState.
+    lists:foldl(fun notifier/2, State, Users).
 
 notifier({Pid, Uid}, CurrentState) ->
     {NextGamestate, NextState} = compose_gamestate(Uid, CurrentState),
@@ -182,11 +208,19 @@ gen_uid(#state{nonce = Nonce} = State) ->
     {int_to_uuid(Nonce), State#state{nonce = NewNonce}}.
 
 int_to_uuid(Integer) ->
-    uri_encode(crypto:sha(term_to_binary(Integer))).
+    uid_encode(crypto:sha(term_to_binary(Integer))).
 
-uri_encode(<<Hash:160, _Rest/binary>>) ->
-    list_to_binary(lists:flatten(io_lib:format("~.16B", [Hash]))).
+uid_encode(<<Hash:160, _Rest/binary>>) ->
+    list_to_binary(integer_to_list(Hash, 16)).
+
+uid_decode(UidBinaryString) ->
+    Uid = list_to_integer(binary_to_list(UidBinaryString), 16),
+    <<Uid:160>>.
 
 gen_nonce() ->
     <<Int:?NONCE_SIZE/unit:8,_Rest/binary>> = crypto:rand_bytes(?NONCE_SIZE),
     Int.
+
+uid_coding_test() ->
+    Raw = crypto:sha(<<"Arbeit macht frei">>),
+    Raw = uid_decode(uid_encode(Raw)).
