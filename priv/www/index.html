@@ -8,14 +8,21 @@
         var ws = new WebSocket("ws://"+location.host+"/game/" + gid);
         ws.onmessage = function(event) {
           var gamestate = $.parseJSON(event.data);
+          var dead = true;
           $('div.uid').replaceWith(gamestate.uid);
           for (var i in gamestate.players) {
             var pos = gamestate.players[i];
             if (0 == pos.id) {
+              dead = false;
               $('div.pos').html("(" + pos.pos.x + "," + pos.pos.y + ")");
             }
           }
-          ws.send("right");
+
+          if (dead) {
+              $('div.pos').html("r.i.p.");
+          } else {
+              ws.send("right");
+          }
         }
       };
       $.get("game", function(data) {
