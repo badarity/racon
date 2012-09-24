@@ -21,7 +21,6 @@ websocket_handle({text, Msg}, Req, #state{game = Pid, uid = Uid} = State) ->
     {ok, Req, State}.
 
 websocket_info({gamestate, Gamestate}, Req, State) ->
-%    io:format("~p~n", [Gamestate]),
     {reply, {text, json_encode(Gamestate)}, Req, State};
 
 websocket_info({'DOWN', _Ref, _Type, Pid, _Info}, Req, State) ->

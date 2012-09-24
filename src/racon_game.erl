@@ -155,8 +155,6 @@ compose_field({H, W}, Uid, Pos) ->
 compose_positions(CurrentUid, Positions) ->
     Folder =
         fun({Uid, Position}, {PlayerId, Mapped}) when CurrentUid == Uid ->
-%						io:format("~p~n", [Uid]),
-
                 {PlayerId, compose_position(0, Position, Mapped)};
             ({_Uid, Position}, {PlayerId, Mapped}) ->
                 {PlayerId + 1, compose_position(PlayerId, Position, Mapped)}
