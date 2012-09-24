@@ -59,7 +59,7 @@ direction(<<"down">>) -> down;
 direction(<<"left">>) -> left;
 direction(<<"right">>) -> right.
 
-%% erlang:monitor, why???
+%% erlang:monitor, why you send such a pid with monitor placed on undefined?
 say_bye({undefined, _Node}, Req, State) ->
     {ok, Req, State};
 say_bye(Pid, Req, #state{master = Pid, slave = undefined} = State) ->

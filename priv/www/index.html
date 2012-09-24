@@ -1,7 +1,34 @@
+<!DOCTYPE HTML>
+
 <html>
   <body>
     <h1>Greetings!</h1>
+    <script src="http://ajax.googleapis.com/ajax/libs/jquery/1/jquery.js"></script>
     <script>
+      $(function() {
+      var ws = new WebSocket('ws://localhost:8081/game/2');
+
+      ws.onopen = function() {
+
+      $('div.frontend').append($('<div/>').html(getTime() + ': connection opened'));
+
+      };
+      ws.onmessage = function(event) {
+      $('div.frontend').append($('<div/>').html(getTime() + ': message received: ' + event.data));
+
+      }
+      ws.onclose = function() {
+
+      $('div.frontend').append($('<div/>').html(getTime() + ': connection closed'));
+
+      };
+
+      function getTime() {
+
+      return new Date().toTimeString().slice(0,8);
+
+      }
+      });
     </script>
   </body>
 </html>
