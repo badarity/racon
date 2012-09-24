@@ -5,8 +5,11 @@
 -export([start_link/1, gamestate/2, move/3]).
 -export([init/1, handle_call/3, handle_info/2, terminate/2]).
 
+-define(NONCE_SIZE, 16).
+
 -record(state, {type :: master | slave,
                 field_size :: {integer(), integer()},
+		nonce,
                 master_pid,
                 slave_pid,
                 users = [],
@@ -24,14 +27,15 @@ move(Pid, Uid, Direction) ->
 
 
 init({master, SlaveNode, Gid}) ->
-    Slave = start_slave(SlaveNode, Gid),
+    Nonce = gen_nonce(),
+    Slave = start_slave(SlaveNode, Gid, Nonce),
     InitState = init_state(master),
-    {ok, InitState#state{slave_pid = Slave, master_pid = self()}};
+    {ok, InitState#state{slave_pid = Slave, master_pid = self(), nonce = Nonce}};
 
-init({slave, Master}) ->
+init({slave, Master, Nonce}) ->
     InitState = init_state(slave),
     erlang:monitor(process, Master),
-    {ok, InitState#state{slave_pid = self(), master_pid = Master}}.
+    {ok, InitState#state{slave_pid = self(), master_pid = Master, nonce = Nonce}}.
 
 handle_call({gamestate, Uid}, From, #state{type = master, slave_pid = Slave} = State) ->
     slave_gamestate(Slave, Uid),
@@ -60,10 +64,10 @@ terminate(_Reason, _State) ->
 init_state(Type) ->
     #state{type = Type, field_size = {30, 30}}.
 
-start_slave(undefined, _Gid) ->
+start_slave(undefined, _Gid, _Nonce) ->
     undefined;
-start_slave(Node, Gid) ->
-    Pid = racon_cli:start_slave_game(Node, Gid, self()),
+start_slave(Node, Gid, Nonce) ->
+    Pid = racon_cli:start_slave_game(Node, Gid, self(), Nonce),
     erlang:monitor(process, Pid),
     Pid.
 
@@ -100,8 +104,8 @@ handle_down(Pid, #state{master_pid = Pid} = State) ->
 handle_down(Pid, #state{slave_pid = Pid} = State) ->
     State#state{slave_pid = undefined}.
 
-fake_gamestate(undefined, Pid, #state{field_size = {H, W}}) ->
-    Uid = gen_uid(),
+fake_gamestate(undefined, Pid, #state{field_size = {H, W}} = State) ->
+    Uid = gen_uid(State),
     { Uid, [ fake_field(H, W) ]};
 
 fake_gamestate(_Uid, Pid, #state{field_size = {H, W}}) ->
@@ -118,5 +122,15 @@ add_client(Uid, Client, #state{users = Users} = State) ->
 notify_clients(#state{users = Users} = State) ->
     [ Pid ! fake_gamestate(Uid, Pid, State) || {Uid, Pid} <- Users].
 
-gen_uid() ->
-    12.
+gen_uid(#state{nonce = Nonce} = State) ->
+    NewNonce = Nonce + 1,
+    {int_to_uuid(Nonce), State#state{nonce = Nonce}}.
+
+int_to_uuid(Integer) ->
+    uri_encode(crypto:sha(term_to_binary(Integer))).
+
+uri_encode(<<Hash:160, _Rest/binary>>) ->
+    list_to_binary(lists:flatten(io_lib:format("~.16B"))).
+
+gen_nonce() ->
+    crypto:rand_bytes(?NONCE_SIZE).
