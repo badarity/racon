@@ -10,10 +10,11 @@ init({tcp,http}, _Req, _Opts) ->
     {upgrade, protocol, cowboy_websocket}.
 
 websocket_init(_TransportName, Req, _Opts) ->
-    Gid = cowboy_req:binding(gid, Req),
-    Uid = cowboy_req:qs_val(<<"uid">>, Req),
+    { Gid, Req2 } = get_gid(Req),
+    { Uid, Req3 } = get_uid(Req2),
     State = connect_games(Gid),
-    {ok, Req, report_gamestate(Gid, Uid, Req, State)}.
+    report_gamestate(Uid, State),
+    {ok, Req3, State}.
 
 websocket_handle({text, Msg}, Req, #state{game = Pid} = State) ->
     make_move(Msg, Pid),
@@ -22,11 +23,24 @@ websocket_handle({text, Msg}, Req, #state{game = Pid} = State) ->
 websocket_info({gamestate, Gamestate}, Req, State) ->
     {reply, {text, json_encode(Gamestate)}, Req, State};
 
-websocket_info({'DOWN', _Type, Pid, _Info}, Req, State) ->
+websocket_info({'DOWN', _Ref, _Type, Pid, _Info}, Req, State) ->
     say_bye(Pid, Req, State).
 
 websocket_terminate(_Reason, _Req, _S) ->
     ok.
+
+get_gid(Req) ->
+    {Gid, Req2} = cowboy_req:binding(gid, Req),
+    { list_to_integer(binary_to_list(Gid)), Req2 }.
+
+get_uid(Req) ->
+    { Uid, Req2 } = cowboy_req:qs_val(<<"uid">>, Req),
+    { maybe_list(Uid), Req2 }.
+
+maybe_list(undefined) ->
+    undefined;
+maybe_list(Binary) ->
+    binary_to_list(Binary).
 
 connect_games(Gid) ->
     {Master, Slave} = racon_cli:gamepids(Gid),
@@ -34,9 +48,8 @@ connect_games(Gid) ->
                   [Master, Slave]),
     #state{master = Master, slave = Slave, game = Master}.
 
-report_gamestate(Gid, Uid, Req, #state{game = Pid} = State) ->
-    {NewUid, Gamestate} = racon_game:gamestate(Pid, Uid),%% it will send back async response
-    State#state{uid = NewUid}.
+report_gamestate(Uid, #state{game = Pid} = State) ->
+    racon_game:gamestate(Pid, Uid).%% it will send back async response
 
 make_move(Direction, GamePid) ->
     racon_game:move(GamePid, direction(Direction)).

@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 -export([start_link/1, gamestate/2, move/3]).
--export([init/1, handle_call/3, handle_info/2, terminate/2]).
+-export([init/1, handle_call/3, handle_cast/2, handle_info/2, terminate/2]).
 
 -define(NONCE_SIZE, 16).
 
@@ -13,14 +13,17 @@
                 master_pid,
                 slave_pid,
                 users = [],
-                positions}).
+                positions = []}).
 
 start_link(Args) ->
     {ok, Pid} = gen_server:start_link(?MODULE, Args, []),
     Pid.
 
 gamestate(Pid, Uid) ->
-    gen_server:call(Pid, {gamestate, Uid}).
+    gamestate(Pid, self(), Uid).
+
+gamestate(Pid, Caller, Uid) ->
+    gen_server:cast(Pid, {gamestate, Caller, Uid}).
 
 move(Pid, Uid, Direction) ->
     gen_server:call(Pid, {move, Uid, Direction}).
@@ -37,12 +40,12 @@ init({slave, Master, Nonce}) ->
     erlang:monitor(process, Master),
     {ok, InitState#state{slave_pid = self(), master_pid = Master, nonce = Nonce}}.
 
-handle_call({gamestate, Uid}, From, #state{type = master, slave_pid = Slave} = State) ->
-    slave_gamestate(Slave, Uid),
-    handle_gamestate(Uid, From, State);
+handle_cast({gamestate, Caller, Uid}, #state{type = master, slave_pid = Slave} = State) ->
+    slave_gamestate(Slave, Caller, Uid),
+    handle_gamestate(Uid, Caller, State);
 
-handle_call({gamestate, Uid}, From, #state{type = slave} = State) ->
-    handle_gamestate(Uid, From, State);
+handle_cast({gamestate, Caller, Uid}, #state{type = slave} = State) ->
+    handle_gamestate(Uid, Caller, State).
 
 handle_call({move, Uid, Direction}, From,
             #state{type = master, slave_pid = Slave} = State) ->
@@ -71,17 +74,17 @@ start_slave(Node, Gid, Nonce) ->
     erlang:monitor(process, Pid),
     Pid.
 
-slave_gamestate(undefined, _Uid) ->
+slave_gamestate(undefined, _Caller, _Uid) ->
     ok;
-slave_gamestate(Slave, Uid) ->
-    try gamestate(Slave, Uid) of
+slave_gamestate(Slave, Caller, Uid) ->
+    try gamestate(Slave, Caller, Uid) of
         Success -> Success
     catch
         _Error:Reason ->
             {error, Reason}
     end.
 
-slave_move(undefined, Uid, _Direction) ->
+slave_move(undefined, _Uid, _Direction) ->
     ok;
 slave_move(Slave, Uid, Direction) ->
     try move(Slave, Uid, Direction) of
@@ -91,12 +94,44 @@ slave_move(Slave, Uid, Direction) ->
             {error, Reason}
     end.
 
-handle_gamestate(Uid, {Client, _Ref}, State) ->
-    {reply, fake_gamestate(Uid, Client, State), add_client(Uid, Client, State)}.
+handle_gamestate(Uid, Client, State) ->
+    NewState = add_client(Uid, Client, State),
+    notify_clients(NewState),
+    {noreply, NewState}.
 
 handle_move(Uid, Direction, {Client, _Ref}, State) ->
-    notify_clients(State),
-    {reply, empty, add_client(Uid, Client, State)}.
+    NewState = move_player(Uid, Direction, State),
+    notify_clients(NewState),
+    {reply, empty, add_client(Uid, Client, NewState)}.
+
+move_player(Uid, Direction, #state{positions = Pos} = State) ->
+    PlayerPos = proplists:get_value(Uid, Pos),
+    change_pos(Uid, PlayerPos, Direction, State).
+
+change_pos(_Uid, undefined, _Direction, State) ->
+    State;
+change_pos(_Uid, {_X, 1}, up, #state{field_size = {_W, _H}} = State) ->
+    State;
+change_pos(_Uid, {1, _Y}, left, #state{field_size = {_W, _H}} = State) ->
+    State;
+change_pos(_Uid, {_X, Y}, down, #state{field_size = {_W, Y}} = State) ->
+    State;
+change_pos(_Uid, {X, _Y}, right, #state{field_size = {X, _H}} = State) ->
+    State;
+change_pos(Uid, Coords, Direction, #state{positions = Pos} = State) ->
+    NewCoords = step(Coords, Direction),
+    CleanedPos = lists:keydelete(NewCoords, 2, Pos),
+    State#state{positions = [ proplists:append_values(Uid, NewCoords) | 
+                              proplists:delete(Uid, CleanedPos) ]}.
+
+step({X, Y}, up) ->
+    {X, Y - 1};
+step({X, Y}, down) ->
+    {X, Y + 1};
+step({X, Y}, left) ->
+    {X - 1, Y};
+step({X, Y}, right) ->
+    {X + 1, Y}.
 
 handle_down(Pid, #state{master_pid = Pid} = State) ->
     State#state{master_pid = undefined};
@@ -104,33 +139,47 @@ handle_down(Pid, #state{master_pid = Pid} = State) ->
 handle_down(Pid, #state{slave_pid = Pid} = State) ->
     State#state{slave_pid = undefined}.
 
-fake_gamestate(undefined, Pid, #state{field_size = {H, W}} = State) ->
+compose_gamestate(undefined, #state{field_size = {H, W},
+                                         positions = Pos} = State) ->
     Uid = gen_uid(State),
-    { Uid, [ fake_field(H, W) ]};
+    NewPos = place_new_player(Uid, Pos),
+    [ { "uid", Uid} | compose_field({H, W}, undefined, NewPos) ];
 
-fake_gamestate(_Uid, Pid, #state{field_size = {H, W}}) ->
-    fake_field(H, W).
+compose_gamestate(Uid, #state{field_size = {H, W}, positions = Pos}) ->
+    compose_field({H, W}, Uid, Pos).
 
-
-fake_field(H, W) ->
+compose_field({H, W}, Uid, Pos) ->
     [ { "field", [ { "height", H }, { "width", W } ] },
-      { "players", [ { 0, [0,0] }, { 1, [3, 3] } ] } ].
+      { "players", compose_positions(Uid, Pos) } ].
+
+compose_positions(CurrentPlayer, Positions) ->
+    Folder =
+        fun([Uid, Position], {PlayerId, Mapped}) when CurrentPlayer == Uid ->
+                {PlayerId, [ {0, Position} | Mapped ]};
+           ([_Uid, Position], {PlayerId, Mapped}) ->
+                {PlayerId + 1, [{PlayerId, Position} | Mapped]}
+        end,
+    lists:foldl(Folder, 1, Positions).
+
+place_new_player(Uid, Pos) ->
+    [{Uid, {1,1}} | Pos]. %% FIXME
 
 add_client(Uid, Client, #state{users = Users} = State) ->
     State#state{users = lists:keystore(Client, 1, Users, {Client, Uid})}.
 
 notify_clients(#state{users = Users} = State) ->
-    [ Pid ! fake_gamestate(Uid, Pid, State) || {Uid, Pid} <- Users].
+    [ Pid ! {gamestate, compose_gamestate(Uid, State)} || {Pid, Uid} <- Users].
 
 gen_uid(#state{nonce = Nonce} = State) ->
     NewNonce = Nonce + 1,
-    {int_to_uuid(Nonce), State#state{nonce = Nonce}}.
+    {int_to_uuid(Nonce), State#state{nonce = NewNonce}}.
 
 int_to_uuid(Integer) ->
     uri_encode(crypto:sha(term_to_binary(Integer))).
 
 uri_encode(<<Hash:160, _Rest/binary>>) ->
-    list_to_binary(lists:flatten(io_lib:format("~.16B"))).
+    list_to_binary(lists:flatten(io_lib:format("~.16B", [Hash]))).
 
 gen_nonce() ->
-    crypto:rand_bytes(?NONCE_SIZE).
+    <<Int:?NONCE_SIZE/unit:8,_Rest/binary>> = crypto:rand_bytes(?NONCE_SIZE),
+    Int.

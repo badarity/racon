@@ -14,7 +14,7 @@ start(Options) ->
     Dispatch =
 	[
 	 {'_', [
-		{[<<"game">>, gid], racon_websocket_handler, []},
+		{[<<"game">>, gid], racon_game_handler, []},
 		{[<<"game">>], racon_http_handler, [gamelist]},
 		{[<<"newgame">>], racon_http_handler, [newgame]},
 		{['...'], cowboy_static, [{directory, DocRoot},

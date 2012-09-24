@@ -3,7 +3,7 @@
 -behaviour(gen_server).
 
 -export([start_link/0]).
--export([get_gamelist/0, gamepids/1, create_game/0, start_slave_game/3]).
+-export([get_gamelist/0, gamepids/1, create_game/0, start_slave_game/4]).
 -export([handle_call/3, handle_info/2, init/1, terminate/2]).
 -export([prepare_mnesia/0]).
 
@@ -28,8 +28,8 @@ create_game() ->
 start_master_game(MasterNode, GID, SlaveNode) ->
     gen_server:call({?MODULE, MasterNode}, {start_master_game, GID, SlaveNode}).
 
-start_slave_game(SlaveNode, GID, MasterPid) ->
-    gen_server:call({?MODULE, SlaveNode}, {start_slave_game, GID, MasterPid}).
+start_slave_game(SlaveNode, GID, MasterPid, Nonce) ->
+    gen_server:call({?MODULE, SlaveNode}, {start_slave_game, GID, MasterPid, Nonce}).
 
 gamepids(Gid) ->
     %% is it dirty?
@@ -54,7 +54,7 @@ init(_Args) ->
 handle_call(get_gamelist, _From, State) ->
     {reply, ok_reply(mnesia:dirty_all_keys(?GAMES_TABLE)), State};
 
-handle_call(create_game, From, State) ->
+handle_call(create_game, _From, State) ->
     {Reply, NewState} = create_new_game(State),
     {reply, Reply, NewState};
 
@@ -62,8 +62,8 @@ handle_call({start_master_game, GID, SlaveNode}, _From, State) ->
     {NewState, Pid} = start_master_game_process(GID, SlaveNode, State),
     {reply, Pid, NewState};
 
-handle_call({start_slave_game, GID, MasterPid}, _From, State) ->
-    Pid = racon_game:start_link({slave, MasterPid}),
+handle_call({start_slave_game, GID, MasterPid, Nonce}, _From, State) ->
+    Pid = racon_game:start_link({slave, MasterPid, Nonce}),
     {reply, Pid, add_game(GID, Pid, slave, State)};
 
 handle_call({gamepid, Gid}, _From, State) ->
