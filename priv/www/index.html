@@ -8,6 +8,10 @@
         var ws = new WebSocket("ws://"+location.host+"/game/" + gid);
         ws.onmessage = function(event) {
           var gamestate = $.parseJSON(event.data);
+          var ws2 = new WebSocket("ws://"+location.host+"/game/" + gid + "?uid=" + gamestate.uid);
+          ws2.onmessage = function(event) {
+            $('div.aux').replaceWith("ok");
+          }
           var dead = true;
           $('div.uid').replaceWith(gamestate.uid);
           for (var i in gamestate.players) {
@@ -40,5 +44,6 @@
     <h1>Greetings!</h1>
     <div class="uid"></div>
     <div class="pos"></div>
+    <div class="aux"></div>
   </body>
 </html>

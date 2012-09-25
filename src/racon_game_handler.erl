@@ -40,7 +40,7 @@ get_uid(Req) ->
 maybe_uid(undefined) ->
     undefined;
 maybe_uid(Binary) ->
-    racon_game:uid_decode(Binary).
+    Binary.
 
 connect_games(Gid) ->
     {Master, Slave} = racon_cli:gamepids(Gid),
